@@ -1,0 +1,4 @@
+data/single_mnist_occluded_20/
+data/single_mnist_occluded_50/
+data/single_mnist_occluded_70/
+.DS_store
