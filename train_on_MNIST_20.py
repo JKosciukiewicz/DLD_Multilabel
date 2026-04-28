@@ -1,7 +1,6 @@
-import utils.compat
 import argparse
-import random
 import os
+import random
 
 import numpy as np
 import torch
@@ -11,6 +10,7 @@ import torch.utils.data as data
 import torchvision
 import tqdm
 
+import utils.compat
 from utils.add_ccn_noise import *
 from utils.cifar_data_utils import Custom_dataset, Double_dataset
 from utils.directional_diffusion_model import *
@@ -66,17 +66,21 @@ def train(
         noisy_labels = torch.tensor(train_dataset.targets).to(device)
     elif noise_class == "sym":
         if "mnist" in args.noise_type and noise_ratio == 0.0:
-             print("Training on pure label:", args.noise_type)
+            print("Training on pure label:", args.noise_type)
         else:
             noisy_targets = add_noise(
-                train_dataset.targets, noise_ratio, n_class, seed=None, symmetric_noise=True
+                train_dataset.targets,
+                noise_ratio,
+                n_class,
+                seed=None,
+                symmetric_noise=True,
             )
             train_dataset.update_label(noisy_targets)
             print(f"Training on {args.noise_type} label noise:")
         noisy_labels = torch.tensor(train_dataset.targets).to(device)
     elif noise_class == "asym":
         if "mnist" in args.noise_type and noise_ratio == 0.0:
-             print("Training on pure label:", args.noise_type)
+            print("Training on pure label:", args.noise_type)
         else:
             noisy_targets = add_noise(
                 train_dataset.targets,
@@ -525,14 +529,14 @@ if __name__ == "__main__":
     # NEW CODE:
     n_class = 10
     train_dataset = TwoDigitMNISTDataset(
-        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/train.csv",
-        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/",
+        csv_file="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/train.csv",
+        image_dir="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/",
         digit_prefix="digit",
         transform=None,
     )
     test_dataset = TwoDigitMNISTDataset(
-        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/test.csv",
-        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/",
+        csv_file="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/test.csv",
+        image_dir="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/",
         digit_prefix="digit",
         transform=None,
     )
