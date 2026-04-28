@@ -88,7 +88,9 @@ def train(
     if dataset == "cifar10":
         data_dir = os.path.join(os.getcwd(), "./data/cifar-10-batches-py")
     else:
-        data_dir = os.path.join(os.getcwd(), "./data/cifar-100-python")
+        data_dir = (
+            "/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50"
+        )
     train_embed_dir = os.path.join(data_dir, f"fp_embed_train_cifar")
     # Compute embedding fp(x) for ws_dataset
     print("Doing pre-computing fp embeddings for weak and strong dataset")
@@ -522,13 +524,13 @@ if __name__ == "__main__":
     # NEW CODE:
     n_class = 10
     train_dataset = SingleDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_50/raw/train.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_50/raw/",
+        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50/raw/train.csv",
+        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50/raw/",
         transform=None,
     )
     test_dataset = SingleDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_50/raw/test.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_50/raw/",
+        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50/raw/test.csv",
+        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50/raw/",
         transform=None,
     )
     MNIST_MEAN = 0.1307

@@ -18,7 +18,7 @@ from utils.log_config import setup_logger
 from utils.model_ResNet import ResNet_encoder
 from utils.model_SimCLR import SimCLR_encoder
 from utils.pre_correction import *
-from utils.single_digit_mnist import SingleDigitMNISTDataset
+from utils.two_digit_mnist import TwoDigitMNISTDataset
 from utils.vit_wrapper import vit_img_wrap
 from utils.ws_augmentation import *
 
@@ -85,11 +85,8 @@ def train(
 
     # Compute embedding fp(x) for ws_dataset
     dataset = args.noise_type.split("-")[0]
-    if dataset == "cifar10":
-        data_dir = os.path.join(os.getcwd(), "./data/cifar-10-batches-py")
-    else:
-        data_dir = os.path.join(os.getcwd(), "./data/cifar-100-python")
-    train_embed_dir = os.path.join(data_dir, f"fp_embed_train_cifar")
+    data_dir = "/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/"
+    train_embed_dir = os.path.join(data_dir, f"fp_embed_train_mnist")
     # Compute embedding fp(x) for ws_dataset
     print("Doing pre-computing fp embeddings for weak and strong dataset")
     weak_embed, strong_embed = prepare_2_fp_x(
@@ -397,10 +394,8 @@ def test(diffusion_model, test_loader):
                 diffusion_model.ddim_sample(
                     x_batch=images, y_input=0, fp_x=None, last=True, stochastic=False
                 )
-                .detach()
-                .cpu()
             )
-            correct = cnt_agree(label_t_0.detach().cpu(), target.cpu())
+            correct = cnt_agree(label_t_0.detach(), target)
             correct_cnt += correct
             all_cnt += images.shape[0]
 
@@ -521,14 +516,16 @@ if __name__ == "__main__":
 
     # NEW CODE:
     n_class = 10
-    train_dataset = SingleDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_20/raw/train.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_20/raw/",
+    train_dataset = TwoDigitMNISTDataset(
+        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/train.csv",
+        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/",
+        digit_prefix="digit",
         transform=None,
     )
-    test_dataset = SingleDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_20/raw/test.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/DLD/data/single_mnist_occluded_20/raw/",
+    test_dataset = TwoDigitMNISTDataset(
+        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/test.csv",
+        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/",
+        digit_prefix="digit",
         transform=None,
     )
     MNIST_MEAN = 0.1307

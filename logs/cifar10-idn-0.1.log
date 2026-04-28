@@ -1,0 +1,89 @@
+2026-04-13 23:09:57,283 - INFO - epoch: 5, test accuracy: 14.67%
+2026-04-13 23:09:59,008 - INFO - Model saved, update best accuracy at Epoch 5, test acc: 14.666666666666666
+2026-04-13 23:12:37,173 - INFO - epoch: 6, test accuracy: 16.13%
+2026-04-13 23:12:38,426 - INFO - Model saved, update best accuracy at Epoch 6, test acc: 16.133333333333333
+2026-04-14 15:36:46,958 - INFO - epoch: 5, test accuracy: 15.80%
+2026-04-14 15:36:48,203 - INFO - Model saved, update best accuracy at Epoch 5, test acc: 15.8
+2026-04-14 15:45:04,495 - INFO - epoch: 5, test accuracy: 17.67%
+2026-04-14 15:45:05,989 - INFO - Model saved, update best accuracy at Epoch 5, test acc: 17.666666666666668
+2026-04-14 15:47:50,142 - INFO - epoch: 6, test accuracy: 17.80%
+2026-04-14 15:47:51,510 - INFO - Model saved, update best accuracy at Epoch 6, test acc: 17.8
+2026-04-14 15:50:35,106 - INFO - epoch: 7, test accuracy: 14.60%
+2026-04-14 15:53:18,360 - INFO - epoch: 8, test accuracy: 16.60%
+2026-04-14 15:56:19,194 - INFO - epoch: 9, test accuracy: 18.27%
+2026-04-14 15:56:20,686 - INFO - Model saved, update best accuracy at Epoch 9, test acc: 18.266666666666666
+2026-04-14 15:59:05,331 - INFO - epoch: 10, test accuracy: 14.80%
+2026-04-14 16:01:48,932 - INFO - epoch: 11, test accuracy: 18.67%
+2026-04-14 16:01:50,445 - INFO - Model saved, update best accuracy at Epoch 11, test acc: 18.666666666666668
+2026-04-14 16:04:34,228 - INFO - epoch: 12, test accuracy: 17.47%
+2026-04-14 16:07:17,475 - INFO - epoch: 13, test accuracy: 16.53%
+2026-04-14 16:10:01,657 - INFO - epoch: 14, test accuracy: 14.93%
+2026-04-14 16:12:44,811 - INFO - epoch: 15, test accuracy: 16.40%
+2026-04-14 16:15:27,961 - INFO - epoch: 16, test accuracy: 19.40%
+2026-04-14 16:15:29,438 - INFO - Model saved, update best accuracy at Epoch 16, test acc: 19.4
+2026-04-14 16:18:13,145 - INFO - epoch: 17, test accuracy: 16.93%
+2026-04-14 16:20:56,701 - INFO - epoch: 18, test accuracy: 17.40%
+2026-04-14 16:23:39,470 - INFO - epoch: 19, test accuracy: 17.73%
+2026-04-14 16:26:25,216 - INFO - epoch: 20, test accuracy: 17.60%
+2026-04-14 16:29:08,193 - INFO - epoch: 21, test accuracy: 20.00%
+2026-04-14 16:29:09,701 - INFO - Model saved, update best accuracy at Epoch 21, test acc: 20.0
+2026-04-14 16:31:53,285 - INFO - epoch: 22, test accuracy: 19.73%
+2026-04-14 16:34:36,764 - INFO - epoch: 23, test accuracy: 17.20%
+2026-04-14 16:37:19,986 - INFO - epoch: 24, test accuracy: 20.27%
+2026-04-14 16:37:21,360 - INFO - Model saved, update best accuracy at Epoch 24, test acc: 20.266666666666666
+2026-04-14 16:40:04,823 - INFO - epoch: 25, test accuracy: 20.60%
+2026-04-14 16:40:06,218 - INFO - Model saved, update best accuracy at Epoch 25, test acc: 20.6
+2026-04-14 16:42:50,327 - INFO - epoch: 26, test accuracy: 21.40%
+2026-04-14 16:42:51,664 - INFO - Model saved, update best accuracy at Epoch 26, test acc: 21.4
+2026-04-14 16:45:35,554 - INFO - epoch: 27, test accuracy: 19.67%
+2026-04-14 16:48:18,990 - INFO - epoch: 28, test accuracy: 20.13%
+2026-04-14 16:51:02,653 - INFO - epoch: 29, test accuracy: 20.40%
+2026-04-14 16:53:45,471 - INFO - epoch: 30, test accuracy: 18.27%
+2026-04-14 16:56:28,917 - INFO - epoch: 31, test accuracy: 20.07%
+2026-04-14 16:59:11,907 - INFO - epoch: 32, test accuracy: 18.67%
+2026-04-14 17:01:49,484 - INFO - epoch: 33, test accuracy: 17.53%
+2026-04-14 17:04:26,033 - INFO - epoch: 34, test accuracy: 19.33%
+2026-04-14 17:07:09,500 - INFO - epoch: 35, test accuracy: 19.20%
+2026-04-14 17:09:53,340 - INFO - epoch: 36, test accuracy: 20.67%
+2026-04-14 17:12:36,267 - INFO - epoch: 37, test accuracy: 19.13%
+2026-04-14 17:15:19,267 - INFO - epoch: 38, test accuracy: 19.47%
+2026-04-14 17:18:03,463 - INFO - epoch: 39, test accuracy: 17.80%
+2026-04-14 17:20:46,532 - INFO - epoch: 40, test accuracy: 19.93%
+2026-04-14 17:23:30,013 - INFO - epoch: 41, test accuracy: 18.73%
+2026-04-14 17:26:13,308 - INFO - epoch: 42, test accuracy: 19.60%
+2026-04-14 17:28:56,707 - INFO - epoch: 43, test accuracy: 18.47%
+2026-04-14 17:31:40,057 - INFO - epoch: 44, test accuracy: 18.33%
+2026-04-14 17:34:23,438 - INFO - epoch: 45, test accuracy: 20.73%
+2026-04-14 17:37:06,596 - INFO - epoch: 46, test accuracy: 19.20%
+2026-04-14 17:39:49,693 - INFO - epoch: 47, test accuracy: 16.33%
+2026-04-14 17:42:33,145 - INFO - epoch: 48, test accuracy: 19.87%
+2026-04-14 17:45:16,992 - INFO - epoch: 49, test accuracy: 19.47%
+2026-04-14 17:48:00,090 - INFO - epoch: 50, test accuracy: 18.27%
+2026-04-14 18:46:54,467 - INFO - epoch: 40, test accuracy: 15.13%
+2026-04-14 18:46:55,863 - INFO - Model saved, update best accuracy at Epoch 40, test acc: 15.133333333333333
+2026-04-14 18:49:39,361 - INFO - epoch: 41, test accuracy: 19.00%
+2026-04-14 18:49:41,331 - INFO - Model saved, update best accuracy at Epoch 41, test acc: 19.0
+2026-04-14 18:52:23,206 - INFO - epoch: 42, test accuracy: 22.00%
+2026-04-14 18:52:24,589 - INFO - Model saved, update best accuracy at Epoch 42, test acc: 22.0
+2026-04-14 18:55:03,846 - INFO - epoch: 43, test accuracy: 19.27%
+2026-04-14 18:57:43,492 - INFO - epoch: 44, test accuracy: 19.67%
+2026-04-14 19:00:22,185 - INFO - epoch: 45, test accuracy: 21.60%
+2026-04-14 19:03:00,949 - INFO - epoch: 46, test accuracy: 20.20%
+2026-04-14 19:05:39,996 - INFO - epoch: 47, test accuracy: 21.13%
+2026-04-14 19:08:17,564 - INFO - epoch: 48, test accuracy: 20.40%
+2026-04-14 19:10:55,117 - INFO - epoch: 49, test accuracy: 20.67%
+2026-04-14 20:06:53,364 - INFO - epoch: 40, test accuracy: 22.27%
+2026-04-14 20:06:54,836 - INFO - Model saved, update best accuracy at Epoch 40, test acc: 22.266666666666666
+2026-04-14 20:10:11,585 - INFO - epoch: 41, test accuracy: 23.93%
+2026-04-14 20:10:13,026 - INFO - Model saved, update best accuracy at Epoch 41, test acc: 23.933333333333334
+2026-04-14 20:12:56,790 - INFO - epoch: 42, test accuracy: 29.47%
+2026-04-14 20:12:58,261 - INFO - Model saved, update best accuracy at Epoch 42, test acc: 29.466666666666665
+2026-04-14 20:15:41,624 - INFO - epoch: 43, test accuracy: 30.60%
+2026-04-14 20:15:43,036 - INFO - Model saved, update best accuracy at Epoch 43, test acc: 30.6
+2026-04-14 20:18:26,323 - INFO - epoch: 44, test accuracy: 30.13%
+2026-04-14 20:21:09,701 - INFO - epoch: 45, test accuracy: 25.60%
+2026-04-14 20:23:52,845 - INFO - epoch: 46, test accuracy: 29.67%
+2026-04-14 20:26:36,361 - INFO - epoch: 47, test accuracy: 29.27%
+2026-04-14 20:29:19,783 - INFO - epoch: 48, test accuracy: 30.53%
+2026-04-14 20:32:03,541 - INFO - epoch: 49, test accuracy: 31.47%
+2026-04-14 20:32:04,937 - INFO - Model saved, update best accuracy at Epoch 49, test acc: 31.466666666666665

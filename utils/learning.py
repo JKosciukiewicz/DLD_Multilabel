@@ -46,17 +46,13 @@ def adjust_learning_rate(optimizer, epoch, warmup_epochs=40, n_epochs=1000, lr_i
 def cast_label_to_one_hot_and_prototype(y_labels_batch, n_class, return_prototype=False):
     """
     Convert labels to one-hot encoding and optionally return the prototype.
-
-    Parameters:
-    - y_labels_batch: A vector of length batch_size.
-    - n_class: The number of classes.
-    - return_prototype: Whether to return the prototype.
-
-    Returns:
-    - y_one_hot_batch: The one-hot encoded labels.
-    - y_logits_batch (optional): The prototype logits if return_prototype is True.
+    For multi-label, y_labels_batch might already be (batch_size, n_class).
     """
-    y_one_hot_batch = nn.functional.one_hot(y_labels_batch, num_classes=n_class).float()
+    if len(y_labels_batch.shape) == 2:
+        y_one_hot_batch = y_labels_batch.float()
+    else:
+        y_one_hot_batch = nn.functional.one_hot(y_labels_batch.to(torch.int64), num_classes=n_class).float()
+    
     if return_prototype:
         label_min, label_max = [0.001, 0.999]
         y_logits_batch = torch.logit(nn.functional.normalize(
@@ -161,15 +157,11 @@ def prepare_fp_x(fp_encoder, dataset, save_dir=None, device='cpu', fp_dim=768, b
 def cnt_agree(output, target, topk=(1,)):
     """
     Compute the accuracy over the k top predictions for the specified values of k.
-
-    Parameters:
-    - output: The model output.
-    - target: The ground truth labels.
-    - topk: The list of top k values.
-
-    Returns:
-    - The number of correct predictions.
+    For multi-label, use cnt_agree_multi.
     """
+    if len(target.shape) == 2:
+        return cnt_agree_multi(output, target)
+
     maxk = min(max(topk), output.size()[1])
 
     output = torch.softmax(-(output - 1) ** 2, dim=-1)
@@ -177,6 +169,17 @@ def cnt_agree(output, target, topk=(1,)):
     pred = pred.t()
     correct = pred.eq(target.reshape(1, -1).expand_as(pred))
 
+    return torch.sum(correct).item()
+
+
+def cnt_agree_multi(output, target, threshold=0.5):
+    """
+    Compute multi-label agreement.
+    output: (batch_size, n_class) - diffusion output
+    target: (batch_size, n_class) - multi-hot ground truth
+    """
+    pred = (output > threshold).float()
+    correct = (pred == target).all(dim=1).float()
     return torch.sum(correct).item()
 
 

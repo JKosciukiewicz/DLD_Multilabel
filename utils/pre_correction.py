@@ -42,12 +42,17 @@ def label_distribution(query_embd, y_query, prior_embd, labels, k=50, n_class=10
         weights = 1.0 / (neighbour_v + 1e-6)
         weights_normalized = weights / weights.sum(dim=1, keepdim=True)
 
-        labels_one_hot = F.one_hot(neighbour_labels, num_classes=n_class).float().to(device)
-        weights_normalized = weights_normalized.to(device)
-        neighbour_label_distribution = torch.sum(labels_one_hot * weights_normalized.unsqueeze(2), dim=1)
+        if len(labels.shape) == 2:
+            neighbour_label_distribution = torch.sum(neighbour_labels * weights_normalized.unsqueeze(2), dim=1)
+        else:
+            labels_one_hot = F.one_hot(neighbour_labels, num_classes=n_class).float().to(device)
+            neighbour_label_distribution = torch.sum(labels_one_hot * weights_normalized.unsqueeze(2), dim=1)
     else:
-        labels_one_hot = F.one_hot(neighbour_labels, num_classes=n_class).float().to(device)
-        neighbour_label_distribution = labels_one_hot.mean(dim=1)
+        if len(labels.shape) == 2:
+            neighbour_label_distribution = neighbour_labels.mean(dim=1)
+        else:
+            labels_one_hot = F.one_hot(neighbour_labels, num_classes=n_class).float().to(device)
+            neighbour_label_distribution = labels_one_hot.mean(dim=1)
 
     _, max_prob_label = torch.max(neighbour_label_distribution, dim=1)
     return max_prob_label, neighbour_label_distribution
@@ -117,13 +122,22 @@ def sample_labels(neighbour_label_distribution, y_query, max_prob_label, lower_s
     y_label_batch[higher_set_batch] = neighbour_label_distribution[higher_set_batch]
 
     # For samples in lower set, check if the original label matches the max probability label
+    is_multi_label = len(y_query.shape) == 2
     for idx in lower_set_batch:
-        if y_query[idx] == max_prob_label[idx]:
-            # If original label matches max probability label, retain original label in one-hot format
-            y_label_batch[idx] = F.one_hot(y_query[idx], num_classes=neighbour_label_distribution.shape[1]).float()
+        if is_multi_label:
+            # For multi-label, check if the max prob digit is present in the original label
+            if y_query[idx, max_prob_label[idx]] > 0.5:
+                 y_label_batch[idx] = y_query[idx]
+            else:
+                 # If not, use the distribution
+                 y_label_batch[idx] = neighbour_label_distribution[idx]
         else:
-            # Otherwise, use the max probability label in one-hot format
-            y_label_batch[idx] = F.one_hot(max_prob_label[idx], num_classes=neighbour_label_distribution.shape[1]).float()
+            if y_query[idx] == max_prob_label[idx]:
+                # If original label matches max probability label, retain original label in one-hot format
+                y_label_batch[idx] = F.one_hot(y_query[idx].to(torch.int64), num_classes=neighbour_label_distribution.shape[1]).float()
+            else:
+                # Otherwise, use the max probability label in one-hot format
+                y_label_batch[idx] = F.one_hot(max_prob_label[idx].to(torch.int64), num_classes=neighbour_label_distribution.shape[1]).float()
 
     if to_single_label:
         # If to_single_label is True, convert to single integer labels
@@ -150,22 +164,36 @@ def get_loss_weights(query_embd, y_query, prior_embd, labels, k=10, n_class=10):
     _, neighbour_ind = knn_cos(query_embd, prior_embd, k=k, use_cosine_similarity=False)
 
     # Compute the labels of the nearest neighbors
-    neighbour_label_distribution = labels[neighbour_ind]
+    neighbour_labels = labels[neighbour_ind]
 
-    # Append the label of the query
-    neighbour_label_distribution = torch.cat((neighbour_label_distribution, y_query[:, None]), 1)
+    is_multi_label = len(labels.shape) == 2
 
-    # Sample a label from the k+1 labels (k neighbors and itself)
-    sampled_labels = neighbour_label_distribution[torch.arange(n_sample), torch.randint(0, k+1, (n_sample,))]
+    if is_multi_label:
+        # neighbour_labels: (n_sample, k, n_class)
+        # y_query: (n_sample, n_class)
+        # Append query label to neighbors
+        combined_labels = torch.cat((neighbour_labels, y_query.unsqueeze(1)), dim=1) # (n_sample, k+1, n_class)
+        # Sample one multi-hot label per sample
+        sampled_indices = torch.randint(0, k+1, (n_sample,))
+        sampled_labels = combined_labels[torch.arange(n_sample), sampled_indices] # (n_sample, n_class)
 
-    # Convert labels to bincount (row wise)
-    y_one_hot_batch = F.one_hot(neighbour_label_distribution, num_classes=n_class).float()
+        # Frequency: how many neighbors share significant overlap with sampled_labels
+        neighbour_freq = torch.sum(combined_labels * sampled_labels.unsqueeze(1), dim=(1, 2))
+    else:
+        # Append the label of the query
+        neighbour_label_distribution = torch.cat((neighbour_labels, y_query[:, None]), 1)
 
-    # Compute the frequency of the sampled labels
-    neighbour_freq = torch.sum(y_one_hot_batch, dim=1)[torch.tensor([range(n_sample)]), sampled_labels]
+        # Sample a label from the k+1 labels (k neighbors and itself)
+        sampled_labels = neighbour_label_distribution[torch.arange(n_sample), torch.randint(0, k+1, (n_sample,))]
+
+        # Convert labels to bincount (row wise)
+        y_one_hot_batch = F.one_hot(neighbour_label_distribution.to(torch.int64), num_classes=n_class).float()
+
+        # Compute the frequency of the sampled labels
+        neighbour_freq = torch.sum(y_one_hot_batch, dim=1)[torch.tensor([range(n_sample)]), sampled_labels.to(torch.int64)]
 
     # Normalize max count as weight
-    weights = neighbour_freq / torch.sum(neighbour_freq)
+    weights = neighbour_freq / (torch.sum(neighbour_freq) + 1e-6)
 
     return torch.squeeze(weights)
 
