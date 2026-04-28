@@ -1,9 +1,11 @@
+import utils.compat
 import os
 import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
+from typing import Optional
 
 
 class TwoDigitMNISTDataset(Dataset):
@@ -14,7 +16,7 @@ class TwoDigitMNISTDataset(Dataset):
     def __init__(
         self,
         csv_file: str,
-        image_dir: str | None = None,
+        image_dir: Optional[str] = None,
         image_col: str = "image_path",
         digit_prefix: str = "label",
         transform=None,

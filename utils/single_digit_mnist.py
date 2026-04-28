@@ -1,3 +1,4 @@
+import utils.compat
 import os
 
 import numpy as np
@@ -5,13 +6,14 @@ import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
+from typing import Optional
 
 
 class SingleDigitMNISTDataset(Dataset):
     def __init__(
         self,
         csv_file: str,
-        image_dir: str | None = None,
+        image_dir: Optional[str] = None,
         transform=None,
     ):
         self.image_dir = image_dir
