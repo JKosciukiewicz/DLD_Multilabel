@@ -7,5 +7,6 @@
 #SBATCH --mem=24G
 #SBATCH --gres=gpu
 
-source /Users/jkosciukiewicz/Developer/Research/DLD/.venv/bin/activate
-python train_on_MNIST_20.py --device cuda
+source /net/people/plgrid/plgjkosciukiewi/DLD/.venv/bin/activate
+cd /net/people/plgrid/plgjkosciukiewi/DLD_Multilabel/
+python train_on_MNIST_20.py --device cuda:0 --nepoch 200 --warmup_epochs 5
