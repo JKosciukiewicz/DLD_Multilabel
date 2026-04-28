@@ -57,43 +57,46 @@ def train(
 
     if noise_class == "idn":
         # Add noise, first pass in the noisy label set, and then update the labels of the training set.
-        if args.noise_type == "cifar10-idn-0.0":
-            print("Training on pure label:", args.noise_type)
+        if args.noise_type == "cifar10-idn-0.0" or "mnist" in args.noise_type:
+            print("Training on pure label or MNIST:", args.noise_type)
         else:
             noise_label = np.load(f"./noise_label_IDN/{args.noise_type}.npy")
             train_dataset.update_label(noise_label[:])
             print(f"Training on {args.noise_type} label noise:")
-        noisy_labels = torch.tensor(train_dataset.targets).squeeze().to(device)
+        noisy_labels = torch.tensor(train_dataset.targets).to(device)
     elif noise_class == "sym":
-        noisy_targets = add_noise(
-            train_dataset.targets, noise_ratio, n_class, seed=None, symmetric_noise=True
-        )
-        train_dataset.update_label(noisy_targets)
-        noisy_labels = torch.tensor(train_dataset.targets).squeeze().to(device)
-        print(f"Training on {args.noise_type} label noise:")
+        if "mnist" in args.noise_type and noise_ratio == 0.0:
+             print("Training on pure label:", args.noise_type)
+        else:
+            noisy_targets = add_noise(
+                train_dataset.targets, noise_ratio, n_class, seed=None, symmetric_noise=True
+            )
+            train_dataset.update_label(noisy_targets)
+            print(f"Training on {args.noise_type} label noise:")
+        noisy_labels = torch.tensor(train_dataset.targets).to(device)
     elif noise_class == "asym":
-        noisy_targets = add_noise(
-            train_dataset.targets,
-            noise_ratio,
-            n_class,
-            seed=None,
-            symmetric_noise=False,
-        )
-        train_dataset.update_label(noisy_targets)
-        noisy_labels = torch.tensor(train_dataset.targets).squeeze().to(device)
-        print(f"Training on {args.noise_type} label noise:")
+        if "mnist" in args.noise_type and noise_ratio == 0.0:
+             print("Training on pure label:", args.noise_type)
+        else:
+            noisy_targets = add_noise(
+                train_dataset.targets,
+                noise_ratio,
+                n_class,
+                seed=None,
+                symmetric_noise=False,
+            )
+            train_dataset.update_label(noisy_targets)
+            print(f"Training on {args.noise_type} label noise:")
+        noisy_labels = torch.tensor(train_dataset.targets).to(device)
     else:
         print("Check your noise type carefully!")
 
     # Compute embedding fp(x) for ws_dataset
     dataset = args.noise_type.split("-")[0]
-    if dataset == "cifar10":
-        data_dir = os.path.join(os.getcwd(), "./data/cifar-10-batches-py")
-    else:
-        data_dir = (
-            "/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50"
-        )
-    train_embed_dir = os.path.join(data_dir, f"fp_embed_train_cifar")
+    data_dir = (
+        "/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_50"
+    )
+    train_embed_dir = os.path.join(data_dir, f"fp_embed_train_mnist")
     # Compute embedding fp(x) for ws_dataset
     print("Doing pre-computing fp embeddings for weak and strong dataset")
     weak_embed, strong_embed = prepare_2_fp_x(
@@ -419,7 +422,7 @@ if __name__ == "__main__":
     )
     # Training parameters
     parser.add_argument(
-        "--noise_type", default="cifar10-idn-0.4", help="noise label file", type=str
+        "--noise_type", default="mnist-sym-0.0", help="noise label file", type=str
     )
     parser.add_argument(
         "--nepoch", default=200, help="number of training epochs", type=int

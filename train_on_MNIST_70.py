@@ -419,7 +419,7 @@ if __name__ == "__main__":
     )
     # Training parameters
     parser.add_argument(
-        "--noise_type", default="cifar10-idn-0.4", help="noise label file", type=str
+        "--noise_type", default="mnist-sym-0.0", help="noise label file", type=str
     )
     parser.add_argument(
         "--nepoch", default=200, help="number of training epochs", type=int
@@ -625,6 +625,16 @@ if __name__ == "__main__":
     # Train the diffusion model
     print(f"Training DLD using fp encoder: {args.fp_encoder} on: {args.noise_type}.")
     print(f"Model saving dir: {model_path}")
+    train(
+        diffusion_model,
+        train_dataset=train_dataset,
+        test_dataset=test_dataset,
+        model_path=model_path,
+        args=args,
+        vit_fp=True,
+        fp_dim=fp_dim,
+    )
+del_path}")
     train(
         diffusion_model,
         train_dataset=train_dataset,

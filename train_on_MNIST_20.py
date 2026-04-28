@@ -57,31 +57,37 @@ def train(
 
     if noise_class == "idn":
         # Add noise, first pass in the noisy label set, and then update the labels of the training set.
-        if args.noise_type == "cifar10-idn-0.0":
-            print("Training on pure label:", args.noise_type)
+        if args.noise_type == "cifar10-idn-0.0" or "mnist" in args.noise_type:
+            print("Training on pure label or MNIST:", args.noise_type)
         else:
             noise_label = np.load(f"./noise_label_IDN/{args.noise_type}.npy")
             train_dataset.update_label(noise_label[:])
             print(f"Training on {args.noise_type} label noise:")
-        noisy_labels = torch.tensor(train_dataset.targets).squeeze().to(device)
+        noisy_labels = torch.tensor(train_dataset.targets).to(device)
     elif noise_class == "sym":
-        noisy_targets = add_noise(
-            train_dataset.targets, noise_ratio, n_class, seed=None, symmetric_noise=True
-        )
-        train_dataset.update_label(noisy_targets)
-        noisy_labels = torch.tensor(train_dataset.targets).squeeze().to(device)
-        print(f"Training on {args.noise_type} label noise:")
+        if "mnist" in args.noise_type and noise_ratio == 0.0:
+             print("Training on pure label:", args.noise_type)
+        else:
+            noisy_targets = add_noise(
+                train_dataset.targets, noise_ratio, n_class, seed=None, symmetric_noise=True
+            )
+            train_dataset.update_label(noisy_targets)
+            print(f"Training on {args.noise_type} label noise:")
+        noisy_labels = torch.tensor(train_dataset.targets).to(device)
     elif noise_class == "asym":
-        noisy_targets = add_noise(
-            train_dataset.targets,
-            noise_ratio,
-            n_class,
-            seed=None,
-            symmetric_noise=False,
-        )
-        train_dataset.update_label(noisy_targets)
-        noisy_labels = torch.tensor(train_dataset.targets).squeeze().to(device)
-        print(f"Training on {args.noise_type} label noise:")
+        if "mnist" in args.noise_type and noise_ratio == 0.0:
+             print("Training on pure label:", args.noise_type)
+        else:
+            noisy_targets = add_noise(
+                train_dataset.targets,
+                noise_ratio,
+                n_class,
+                seed=None,
+                symmetric_noise=False,
+            )
+            train_dataset.update_label(noisy_targets)
+            print(f"Training on {args.noise_type} label noise:")
+        noisy_labels = torch.tensor(train_dataset.targets).to(device)
     else:
         print("Check your noise type carefully!")
 
@@ -412,7 +418,7 @@ if __name__ == "__main__":
     )
     # Training parameters
     parser.add_argument(
-        "--noise_type", default="cifar10-idn-0.4", help="noise label file", type=str
+        "--noise_type", default="mnist-sym-0.0", help="noise label file", type=str
     )
     parser.add_argument(
         "--nepoch", default=200, help="number of training epochs", type=int
@@ -519,14 +525,14 @@ if __name__ == "__main__":
     # NEW CODE:
     n_class = 10
     train_dataset = TwoDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/train.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/",
+        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/train.csv",
+        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/",
         digit_prefix="digit",
         transform=None,
     )
     test_dataset = TwoDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/test.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/",
+        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/test.csv",
+        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/",
         digit_prefix="digit",
         transform=None,
     )
