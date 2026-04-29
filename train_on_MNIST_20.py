@@ -97,9 +97,7 @@ def train(
 
     # Compute embedding fp(x) for ws_dataset
     dataset = args.noise_type.split("-")[0]
-    data_dir = (
-        "/Users/jkosciukiewicz/Developer/Research/DLD/data/dual_mnist_occluded/raw/"
-    )
+    data_dir = "/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/"
     train_embed_dir = os.path.join(data_dir, f"fp_embed_train_mnist")
     # Compute embedding fp(x) for ws_dataset
     print("Doing pre-computing fp embeddings for weak and strong dataset")
