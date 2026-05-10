@@ -542,7 +542,7 @@ if __name__ == "__main__":
         n_steps=1000,
         y_dim=n_class,
         fp_dim=fp_dim,
-        feature_dim=args.feature_dim,
+        feature_dim=feature_dim,  # Use actual feature dimension for pre-extracted features
         guidance=True,
         num_models=args.num_models,
         objective=args.objective,
@@ -558,7 +558,7 @@ if __name__ == "__main__":
         n_class=n_class,
         fp_dim=fp_dim,
         device=device,
-        feature_dim=args.feature_dim,
+        feature_dim=feature_dim,  # Use actual feature dimension for pre-extracted features
         encoder_type=args.diff_encoder,
         objective=args.objective,
         sampling_timesteps=args.ddim_n_step,

@@ -72,8 +72,15 @@ class BrayDataset(Dataset):
 
         # Load and process data
         data_df = pd.read_csv(data_file)
-        data_df = data_df[["Metadata_broad_sample"] + self.feature_columns]
-        data_df = data_df.rename(columns={"Metadata_broad_sample": "BROAD_ID"})
+        
+        # Handle different column names for BROAD_ID
+        if "Metadata_broad_sample" in data_df.columns:
+            data_df = data_df[["Metadata_broad_sample"] + self.feature_columns]
+            data_df = data_df.rename(columns={"Metadata_broad_sample": "BROAD_ID"})
+        elif "BROAD_ID" in data_df.columns:
+            data_df = data_df[["BROAD_ID"] + self.feature_columns]
+        else:
+            raise ValueError("Data file must have either 'Metadata_broad_sample' or 'BROAD_ID' column")
 
         # Join data with labels
         merged_df = pd.merge(data_df, labels_df, on="BROAD_ID", how="inner")
