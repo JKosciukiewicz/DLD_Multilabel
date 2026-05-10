@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
-import torchvision
+from torch.utils.data import Dataset
 import tqdm
 
 import utils.compat
@@ -17,35 +17,71 @@ from utils.directional_diffusion_model import *
 from utils.ema import EMA
 from utils.learning import *
 from utils.log_config import setup_logger
-from utils.model_ResNet import ResNet_encoder
-from utils.model_SimCLR import SimCLR_encoder
 from utils.pre_correction import *
-from utils.two_digit_mnist import TwoDigitMNISTDataset
-from utils.vit_wrapper import vit_img_wrap
-from utils.ws_augmentation import *
+from bray_dataset import BrayDataset
 
 
-# Main training function (diffusion model, training, validation, test sets, model save path, command line arguments, encoder)
+# Simple feature encoder for pre-extracted features
+class FeatureEncoder(nn.Module):
+    """Simple linear encoder for pre-extracted features."""
+    def __init__(self, input_dim, output_dim=512):
+        super().__init__()
+        self.fc = nn.Linear(input_dim, output_dim)
+        
+    def forward(self, x):
+        # x shape: (batch, input_dim)
+        return self.fc(x)
+
+
+# Dataset wrapper for Bray with weak/strong feature views
+class FeatureDoubleDataset(Dataset):
+    """
+    Dataset wrapper that creates weak and strong views from pre-extracted features.
+    For features, weak/strong just means the same features (identity).
+    """
+    def __init__(self, dataset, feature_dim, fp_dim=512):
+        self.dataset = dataset
+        self.feature_dim = feature_dim
+        self.fp_dim = fp_dim
+        
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getitem__(self, idx):
+        features, targets, mask = self.dataset[idx]
+        # For features, weak and strong are the same
+        # features shape: (feature_dim,) - DO NOT add batch dim, DataLoader will handle it
+        return features, features, targets, idx
+
+
+# Dataset wrapper for Bray test set
+class FeatureCustomDataset(Dataset):
+    """
+    Dataset wrapper for test set with pre-extracted features.
+    """
+    def __init__(self, dataset):
+        self.dataset = dataset
+        
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getitem__(self, idx):
+        features, targets, mask = self.dataset[idx]
+        # features shape: (feature_dim,) - DO NOT add batch dim, DataLoader will handle it
+        return features, targets, idx
+
+
+# Main training function
 def train(
-    diffusion_model, train_dataset, test_dataset, model_path, args, vit_fp, fp_dim
+    diffusion_model, train_dataset, test_dataset, model_path, args, feature_dim
 ):
     """
     Train the diffusion model with the given datasets and arguments.
-
-    Parameters:
-    - diffusion_model: The diffusion model to be trained.
-    - train_dataset: The dataset used for training.
-    - test_dataset: The dataset used for testing.
-    - val_dataset: The dataset used for validation.
-    - model_path: Path to save the trained model.
-    - args: Command line arguments containing training parameters.
-    - vit_fp: Whether to use precomputed feature embeddings.
-    - fp_dim: Dimension of the feature embeddings.
     """
     print(
         f"Use loss weights: {args.loss_w}, Use Single label: {args.to_single_label}, Use One view: {args.one_view}"
     )
-    # Extract configurations from the model and command line arguments, including training device, number of classes, total training epochs, k value in KNN, and warmup epochs.
+    
     device = diffusion_model.device
     n_class = diffusion_model.n_class
     num_models = diffusion_model.num_models
@@ -55,70 +91,49 @@ def train(
     noise_class = args.noise_type.split("-")[1]
     noise_ratio = float(args.noise_type.split("-")[2])
 
+    # Handle noisy labels if needed
     if noise_class == "idn":
-        # Add noise, first pass in the noisy label set, and then update the labels of the training set.
-        if args.noise_type == "cifar10-idn-0.0" or "mnist" in args.noise_type:
-            print("Training on pure label or MNIST:", args.noise_type)
+        if "bray" in args.noise_type and noise_ratio == 0.0:
+            print("Training on pure label:", args.noise_type)
         else:
-            noise_label = np.load(f"./noise_label_IDN/{args.noise_type}.npy")
-            train_dataset.update_label(noise_label[:])
-            print(f"Training on {args.noise_type} label noise:")
-        noisy_labels = torch.tensor(train_dataset.targets).to(device)
+            print(f"IDN noise not implemented for Bray, using clean labels")
+        noisy_labels = torch.tensor(train_dataset.dataset.targets_data).to(device)
     elif noise_class == "sym":
-        if "mnist" in args.noise_type and noise_ratio == 0.0:
+        if "bray" in args.noise_type and noise_ratio == 0.0:
             print("Training on pure label:", args.noise_type)
         else:
-            noisy_targets = add_noise(
-                train_dataset.targets,
-                noise_ratio,
-                n_class,
-                seed=None,
-                symmetric_noise=True,
-            )
-            train_dataset.update_label(noisy_targets)
-            print(f"Training on {args.noise_type} label noise:")
-        noisy_labels = torch.tensor(train_dataset.targets).to(device)
+            print(f"Symmetric noise not implemented for Bray, using clean labels")
+        noisy_labels = torch.tensor(train_dataset.dataset.targets_data).to(device)
     elif noise_class == "asym":
-        if "mnist" in args.noise_type and noise_ratio == 0.0:
+        if "bray" in args.noise_type and noise_ratio == 0.0:
             print("Training on pure label:", args.noise_type)
         else:
-            noisy_targets = add_noise(
-                train_dataset.targets,
-                noise_ratio,
-                n_class,
-                seed=None,
-                symmetric_noise=False,
-            )
-            train_dataset.update_label(noisy_targets)
-            print(f"Training on {args.noise_type} label noise:")
-        noisy_labels = torch.tensor(train_dataset.targets).to(device)
+            print(f"Asymmetric noise not implemented for Bray, using clean labels")
+        noisy_labels = torch.tensor(train_dataset.dataset.targets_data).to(device)
     else:
         print("Check your noise type carefully!")
+        noisy_labels = torch.tensor(train_dataset.dataset.targets_data).to(device)
 
-    # Compute embedding fp(x) for ws_dataset
-    dataset = args.noise_type.split("-")[0]
-    data_dir = "./data/dual_mnist_occluded/raw/"
-    train_embed_dir = os.path.join(data_dir, f"fp_embed_train_mnist")
-    # Compute embedding fp(x) for ws_dataset
-    print("Doing pre-computing fp embeddings for weak and strong dataset")
-    weak_embed, strong_embed = prepare_2_fp_x(
-        fp_encoder,
+    # Compute embedding fp(x) for dataset
+    # For pre-extracted features, we compute fp(x) using the feature encoder
+    print("Computing fp embeddings for dataset")
+    weak_embed, strong_embed = prepare_2_fp_x_feature(
+        diffusion_model.fp_encoder,
         train_dataset,
-        save_dir=train_embed_dir,
         device=device,
-        fp_dim=fp_dim,
+        fp_dim=args.feature_dim,
     )
     weak_embed = weak_embed.to(device)
     strong_embed = strong_embed.to(device)
 
     train_loader = data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=3
+        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
     )
     test_loader = data.DataLoader(
-        test_dataset, batch_size=200, shuffle=False, num_workers=3
+        test_dataset, batch_size=200, shuffle=False, num_workers=args.num_workers
     )
 
-    # Optimizer settings for dual networks
+    # Optimizer settings
     if diffusion_model.num_models == 1:
         optimizer = optim.Adam(
             diffusion_model.model.parameters(),
@@ -147,7 +162,6 @@ def train(
             amsgrad=False,
             eps=1e-08,
         )
-        # Initialize EMA helper and register model parameters to smooth model parameter updates during training to improve model stability and performance.
         ema_helper_res = EMA(mu=0.999)
         ema_helper_noise = EMA(mu=0.999)
         ema_helper_res.register(diffusion_model.model0)
@@ -155,7 +169,7 @@ def train(
 
     diffusion_loss = nn.MSELoss(reduction="none")
 
-    # Train in a loop and record the highest accuracy to save the model
+    # Train in a loop
     max_accuracy = 0.0
     print("Directional Diffusion training start")
     for epoch in range(n_epochs):
@@ -179,14 +193,9 @@ def train(
                 x_batch_s = x_batch_s.to(device)
                 y_noisy = y_batch.to(device)
 
-                if vit_fp:
-                    # Use precomputed feature embeddings
-                    fp_embd_w = weak_embed[data_indices, :].to(device)
-                    fp_embd_s = strong_embed[data_indices, :].to(device)
-                else:
-                    # Compute feature embeddings in real-time
-                    fp_embd_w = diffusion_model.fp_encoder(x_batch_w.to(device))
-                    fp_embd_s = diffusion_model.fp_encoder(x_batch_s.to(device))
+                # For features, use the feature encoder directly
+                fp_embd_w = diffusion_model.fp_encoder(x_batch_w.to(device))
+                fp_embd_s = diffusion_model.fp_encoder(x_batch_s.to(device))
 
                 # pre-correct labels based on two views
                 (
@@ -213,10 +222,10 @@ def train(
                     x_batch = x_batch_w
                 else:
                     x_batch = (
-                        1 - gamma_batch.view(-1, 1, 1, 1)
-                    ) * x_batch_w + gamma_batch.view(-1, 1, 1, 1) * x_batch_s
+                        1 - gamma_batch.view(-1, 1)
+                    ) * x_batch_w + gamma_batch.view(-1, 1) * x_batch_s
 
-                # Check if the labels are one-hot encoded, if not, convert them to vectors
+                # Check if the labels are one-hot encoded
                 if len(y_label_batch_w.shape) == 1:
                     y_one_hot_batch_w = cast_label_to_one_hot_and_prototype(
                         y_label_batch_w.to(torch.int64), n_class=n_class
@@ -258,29 +267,22 @@ def train(
                         lr_input=1e-3,
                     )
 
-                # Sampling t for symmetric
+                # Sampling t
                 n = x_batch.size(0)
-
                 t = torch.randint(
                     low=0, high=diffusion_model.num_timesteps, size=(n // 2 + 1,)
                 ).to(device)
                 t = torch.cat([t, diffusion_model.num_timesteps - 1 - t], dim=0)[:n]
 
-                ## Sampling t for random
-                # t = torch.randint(0, diffusion_model.num_timesteps, (n,), device=device).long()
-
-                # Single view training, only train weakly augmented images with precise label sampling
-
+                # Forward pass
                 output, e = diffusion_model.forward_t(
                     y_zeros, y_0_batch_w, x_batch, t, fp_embd_w
                 )
 
                 if diffusion_model.objective == "pred_res_noise":
-                    # Calculate L_res and L_noise losses
                     L_res = diffusion_loss(output[0], e[0])
                     L_noise = diffusion_loss(output[1], e[1])
 
-                    # Apply optional loss weighting
                     weighted_L_res = (
                         torch.matmul(loss_weights_w, L_res) if args.loss_w else L_res
                     )
@@ -290,12 +292,10 @@ def train(
                         else L_noise
                     )
 
-                    # Mean loss calculation
                     l_res_loss = torch.mean(weighted_L_res)
                     l_noise_loss = torch.mean(weighted_L_noise)
 
                     if diffusion_model.num_models == 2:
-                        # Update model0 using l_res_loss
                         optimizer_res.zero_grad()
                         l_res_loss.backward(retain_graph=True)
                         torch.nn.utils.clip_grad_norm_(
@@ -304,7 +304,6 @@ def train(
                         optimizer_res.step()
                         ema_helper_res.update(diffusion_model.model0)
 
-                        # Update model1 using l_noise_loss
                         optimizer_noise.zero_grad()
                         l_noise_loss.backward()
                         torch.nn.utils.clip_grad_norm_(
@@ -313,7 +312,6 @@ def train(
                         optimizer_noise.step()
                         ema_helper_noise.update(diffusion_model.model1)
 
-                        # Update progress bar
                         pbar.set_postfix(
                             {
                                 "res_loss": l_res_loss.item(),
@@ -321,9 +319,7 @@ def train(
                             }
                         )
 
-                    elif (
-                        diffusion_model.num_models == 1
-                    ):  # For single model, combine losses
+                    elif diffusion_model.num_models == 1:
                         loss = 0.1 * l_res_loss + 0.9 * l_noise_loss
                         optimizer.zero_grad()
                         loss.backward()
@@ -334,8 +330,7 @@ def train(
                         ema_helper.update(diffusion_model.model)
                         pbar.set_postfix({"loss": loss.item()})
 
-                else:  # For objectives other than 'pred_res_noise'
-                    # Calculate loss without separation
+                else:
                     L_noise = diffusion_loss(output, e)
                     weighted_L_noise = (
                         torch.matmul(loss_weights_w, L_noise)
@@ -344,7 +339,6 @@ def train(
                     )
                     loss = torch.mean(weighted_L_noise)
 
-                    # Perform single optimizer step for combined objective
                     optimizer.zero_grad()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(
@@ -354,12 +348,11 @@ def train(
                     ema_helper.update(diffusion_model.model)
                     pbar.set_postfix({"loss": loss.item()})
 
-        # Every epoch, perform validation, if the validation accuracy of the current epoch exceeds the previous highest accuracy, evaluate the model on the test set, and save the current best model parameters.
+        # Validation and model saving
         if epoch >= warmup_epochs:
-            test_acc = test(diffusion_model, test_loader)
+            test_acc = test(diffusion_model, test_loader, feature_dim)
             logger.info(f"epoch: {epoch}, test accuracy: {test_acc:.2f}%")
             if test_acc > max_accuracy:
-                # Save diffusion model
                 print("Improved! Evaluate on testing set...")
                 if diffusion_model.num_models == 1:
                     states = {
@@ -378,16 +371,9 @@ def train(
                 max_accuracy = max(max_accuracy, test_acc)
 
 
-def test(diffusion_model, test_loader):
+def test(diffusion_model, test_loader, feature_dim):
     """
-    Test the diffusion model with the given test loader.
-
-    Parameters:
-    - diffusion_model: The diffusion model to be tested.
-    - test_loader: DataLoader for the test set.
-
-    Returns:
-    - acc: The accuracy of the model on the test set.
+    Test the diffusion model.
     """
     with torch.no_grad():
         diffusion_model.model.eval()
@@ -401,7 +387,12 @@ def test(diffusion_model, test_loader):
             ncols=100,
         ):
             [images, target, _] = data_batch[:3]
-            target = target.to(device)
+            target = target.to(diffusion_model.device)
+            # Reshape images to (batch, feature_dim)
+            images = images.to(diffusion_model.device)
+            if len(images.shape) == 3:
+                images = images.squeeze(1)  # Remove extra dimension
+            
             label_t_0 = diffusion_model.ddim_sample(
                 x_batch=images, y_input=0, fp_x=None, last=True, stochastic=False
             )
@@ -413,6 +404,28 @@ def test(diffusion_model, test_loader):
     return acc
 
 
+def prepare_2_fp_x_feature(fp_encoder, dataset, save_dir=None, device='cpu', fp_dim=768, batch_size=400):
+    """
+    Prepare feature embeddings for pre-extracted features.
+    """
+    # Initialize feature embeddings
+    fp_embed_all_weak = torch.zeros([len(dataset), fp_dim], device=device)
+    fp_embed_all_strong = torch.zeros([len(dataset), fp_dim], device=device)
+
+    with torch.no_grad():
+        data_loader = data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=16)
+        with tqdm(enumerate(data_loader), total=len(data_loader), desc=f'Computing embeddings fp(x)', ncols=100) as pbar:
+            for i, data_batch in pbar:
+                [x_batch_weak, x_batch_strong, _, data_indices] = data_batch[:4]
+                temp_weak = fp_encoder(x_batch_weak.to(device))
+                temp_strong = fp_encoder(x_batch_strong.to(device))
+                data_indices = data_indices.to(device)
+                fp_embed_all_weak[data_indices] = temp_weak
+                fp_embed_all_strong[data_indices] = temp_strong
+
+    return fp_embed_all_weak.cpu(), fp_embed_all_strong.cpu()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -420,7 +433,7 @@ if __name__ == "__main__":
     )
     # Training parameters
     parser.add_argument(
-        "--noise_type", default="mnist-sym-0.0", help="noise label file", type=str
+        "--noise_type", default="bray-sym-0.0", help="noise label file", type=str
     )
     parser.add_argument(
         "--nepoch", default=200, help="number of training epochs", type=int
@@ -461,25 +474,31 @@ if __name__ == "__main__":
         help="which type for diffusion (pred_res, pred_noise, pred_res_noise...)",
         type=str,
     )
-
-    # Large model hyperparameters
+    # Feature encoder parameters
     parser.add_argument(
         "--fp_encoder",
-        default="ViT",
-        help="which encoder for fp (SimCLR, Vit or ResNet)",
+        default="FeatureEncoder",
+        help="which encoder for fp (FeatureEncoder for pre-extracted features)",
         type=str,
-    )
-    parser.add_argument(
-        "--ViT_type", default="ViT-L/14", help="which encoder for Vit", type=str
-    )
-    parser.add_argument(
-        "--ResNet_type", default="resnet34", help="which encoder for ResNet", type=str
     )
     # Storage path
     parser.add_argument(
         "--log_name",
-        default="cifar10-idn-0.1.log",
+        default="bray-sym-0.0.log",
         help="create your logs name",
+        type=str,
+    )
+    # Dataset paths
+    parser.add_argument(
+        "--data_file",
+        default="_data/gigadb/gigadb.csv",
+        help="path to Bray features CSV file",
+        type=str,
+    )
+    parser.add_argument(
+        "--labels_file",
+        default="_data/gigadb/gigadb_MoA_with_images_filtered_25.csv",
+        help="path to Bray labels CSV file",
         type=str,
     )
     args = parser.parse_args()
@@ -494,100 +513,38 @@ if __name__ == "__main__":
     print(device)
     print("Using device:", device)
 
-    dataset = args.noise_type.split("-")[0]
-
-    # Load dataset
-    #
-    # 1. Change dataset here to load MNIST
-    # OLD CODE:
-    # if dataset == "cifar10":
-    #     n_class = 10
-    #     train_dataset_cifar = torchvision.datasets.CIFAR10(
-    #         root="./data/", train=True, download=True
-    #     )
-    #     test_dataset_cifar = torchvision.datasets.CIFAR10(
-    #         root="./data/", train=False, download=True
-    #     )
-    #     # Data normalization parameters
-    #     CIFAR_MEAN = (0.4914, 0.4822, 0.4465)
-    #     CIFAR_STD = (0.2023, 0.1994, 0.2010)
-    # elif dataset == "cifar100":
-    #     n_class = 100
-    #     train_dataset_cifar = torchvision.datasets.CIFAR100(
-    #         root="./data/", train=True, download=True
-    #     )
-    #     test_dataset_cifar = torchvision.datasets.CIFAR100(
-    #         root="./data/", train=False, download=True
-    #     )
-    #     CIFAR_MEAN = (0.4914, 0.4822, 0.4465)
-    #     CIFAR_STD = (0.2023, 0.1994, 0.2010)
-    # else:
-    #     raise Exception("Dataset should be cifar10 or cifar100")
-
-    # NEW CODE:
-    n_class = 10
-    train_dataset = TwoDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/train.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/",
-        digit_prefix="digit",
-        transform=None,
+    # Load Bray dataset
+    print("Loading Bray dataset...")
+    train_dataset_raw = BrayDataset(
+        data_file=args.data_file,
+        labels_file=args.labels_file,
+        split_column="hier_split",
+        split_value="train",
+        mask_uncertain=True,
     )
-    test_dataset = TwoDigitMNISTDataset(
-        csv_file="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/test.csv",
-        image_dir="/net/people/plgrid/plgjkosciukiewi/data/dual_mnist_occluded/raw/",
-        digit_prefix="digit",
-        transform=None,
+    test_dataset_raw = BrayDataset(
+        data_file=args.data_file,
+        labels_file=args.labels_file,
+        split_column="hier_split",
+        split_value="test",
+        mask_uncertain=True,
     )
-    MNIST_MEAN = 0.1307
-    MNIST_STD = 0.3080
 
-    # Load fp feature extractor
-    # OLD CODE
-    # if args.fp_encoder == "SimCLR":
-    #     fp_dim = 2048
-    #     state_dict = torch.load(
-    #         f"./model/SimCLR_128_{dataset}.pt", map_location=torch.device(args.device)
-    #     )
-    #     fp_encoder = SimCLR_encoder(feature_dim=128).to(args.device)
-    #     fp_encoder.load_state_dict(state_dict, strict=False)
-    # elif args.fp_encoder == "ViT":
-    #     fp_encoder = vit_img_wrap(
-    #         args.ViT_type, args.device, center=CIFAR_MEAN, std=CIFAR_STD
-    #     )
-    #     fp_dim = fp_encoder.dim
-    # elif args.fp_encoder == "ResNet":
-    #     if args.ResNet_type == "resnet34":
-    #         fp_dim = 512
-    #     else:
-    #         fp_dim = 2048
-    #     fp_encoder = ResNet_encoder(feature_dim=fp_dim, base_model=args.ResNet_type).to(
-    #         args.device
-    #     )
-    # else:
-    #     raise Exception("fp_encoder should be SimCLR, Vit or ResNet")
+    n_class = len(train_dataset_raw.get_target_names())
+    feature_dim = len(train_dataset_raw.get_feature_names())
+    
+    print(f"Number of classes (MoA): {n_class}")
+    print(f"Number of features: {feature_dim}")
+    print(f"Training samples: {len(train_dataset_raw)}")
+    print(f"Test samples: {len(test_dataset_raw)}")
 
-    # NEW CODE:
-    fp_encoder = vit_img_wrap(
-        args.ViT_type, args.device, center=MNIST_MEAN, std=MNIST_STD
-    )
-    fp_dim = fp_encoder.dim
+    # Create feature encoder
+    fp_encoder = FeatureEncoder(input_dim=feature_dim, output_dim=args.feature_dim).to(device)
+    fp_dim = args.feature_dim
 
-    # Create training and test set instances using custom dataset class
-    # Change transforms
-    # transform_fixmatch = TransformFixMatch_CIFAR10(CIFAR_MEAN, CIFAR_STD, 2, 10)
-    #     train_dataset = Double_dataset(
-    #     data=train_dataset_cifar.data[:],
-    #     targets=train_dataset_cifar.targets[:],
-    #     transform_fixmatch=transform_fixmatch,
-    # )
-    # test_dataset = Custom_dataset(test_dataset_cifar.data, test_dataset_cifar.targets)
-    transform_fixmatch = TransformFixMatch_CIFAR10(MNIST_MEAN, MNIST_STD, 2, 10)
-    train_dataset = Double_dataset(
-        data=train_dataset.data[:],
-        targets=train_dataset.targets[:],
-        transform_fixmatch=transform_fixmatch,
-    )
-    test_dataset = Custom_dataset(test_dataset.data, test_dataset.targets)
+    # Wrap datasets for training
+    train_dataset = FeatureDoubleDataset(train_dataset_raw, feature_dim, fp_dim)
+    test_dataset = FeatureCustomDataset(test_dataset_raw)
 
     # Initialize the diffusion model
     model_path = f"./model/DLD_{args.fp_encoder}_{args.noise_type}.pt"
@@ -600,7 +557,8 @@ if __name__ == "__main__":
         num_models=args.num_models,
         objective=args.objective,
         encoder_type=args.diff_encoder,
-    ).to(args.device)
+        use_feature_input=True,  # Skip diffusion_encoder for pre-extracted features
+    ).to(device)
 
     diffusion_model = DirectionalDiffusion(
         model=base_model,
@@ -609,7 +567,7 @@ if __name__ == "__main__":
         num_timesteps=1000,
         n_class=n_class,
         fp_dim=fp_dim,
-        device=args.device,
+        device=device,
         feature_dim=args.feature_dim,
         encoder_type=args.diff_encoder,
         objective=args.objective,
@@ -619,11 +577,10 @@ if __name__ == "__main__":
         sum_scale=1.0,
         ddim_sampling_eta=0.0,
         beta_schedule="cosine",
+        use_feature_input=True,  # Skip diffusion_encoder for pre-extracted features
     )
 
     diffusion_model.fp_encoder.eval()
-    # state_dict = torch.load(model_path, map_location=torch.device(device))
-    # diffusion_model.load_diffusion_net(state_dict)
 
     # Train the diffusion model
     print(f"Training DLD using fp encoder: {args.fp_encoder} on: {args.noise_type}.")
@@ -634,6 +591,5 @@ if __name__ == "__main__":
         test_dataset=test_dataset,
         model_path=model_path,
         args=args,
-        vit_fp=True,
-        fp_dim=fp_dim,
+        feature_dim=feature_dim,
     )

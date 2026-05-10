@@ -1,3 +1,5 @@
+import utils.compat
+import os
 import torch
 import argparse
 import torch.nn as nn

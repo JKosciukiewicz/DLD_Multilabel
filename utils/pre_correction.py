@@ -80,7 +80,7 @@ def gmm_binary_split(kl_div_values, n_components=2, random_state=0):
     """
     # Ensure kl_div_values is a NumPy array
     if isinstance(kl_div_values, torch.Tensor):
-        kl_div_values = kl_div_values.cpu().numpy()
+        kl_div_values = kl_div_values.detach().cpu().numpy()
 
     # Reshape for GMM
     kl_div_values = kl_div_values.reshape(-1, 1)

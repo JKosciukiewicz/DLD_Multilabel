@@ -1,4 +1,7 @@
+import utils.compat
 import numpy as np
+import os
+import random
 import torch.utils.data as data
 from tqdm import tqdm
 from utils.ema import EMA

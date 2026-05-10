@@ -214,6 +214,7 @@ class ConditionalModel(nn.Module):
         num_models=2,
         encoder_type="resnet34",
         objective="pred_res_noise",
+        use_feature_input=False,
     ):
         """
         Initialize the ConditionalModel.
@@ -225,6 +226,7 @@ class ConditionalModel(nn.Module):
         - feature_dim: Dimension of the features.
         - guidance: Whether to use guidance.
         - encoder_type: Type of diffusion encoder to use (e.g., 'resnet50').
+        - use_feature_input: If True, skip diffusion_encoder (for pre-extracted features).
         """
         super(ConditionalModel, self).__init__()
         n_steps = n_steps + 1
@@ -234,9 +236,13 @@ class ConditionalModel(nn.Module):
         self.feature_dim = feature_dim
         self.encoder_type = encoder_type
         self.objective = objective
+        self.use_feature_input = use_feature_input
 
-        # Instantiate diffusion encoder within ConditionalModel
-        self.diffusion_encoder = self._get_encoder(encoder_type, feature_dim)
+        # Instantiate diffusion encoder within ConditionalModel (skip if using pre-extracted features)
+        if use_feature_input:
+            self.diffusion_encoder = None
+        else:
+            self.diffusion_encoder = self._get_encoder(encoder_type, feature_dim)
         self.norm = nn.BatchNorm1d(feature_dim)
 
         # U-Net structure
@@ -285,7 +291,7 @@ class ConditionalModel(nn.Module):
         Forward pass for the ConditionalModel.
 
         Parameters:
-        - x: Raw input features (images).
+        - x: Raw input features (images) or pre-extracted features.
         - y: Labels.
         - t: Time step.
         - fp_x: Optional feature embeddings.
@@ -294,7 +300,11 @@ class ConditionalModel(nn.Module):
         - The output of the model.
         """
         # Process input x through diffusion_encoder to get embedded features
-        x_embed = self.diffusion_encoder(x)
+        # Skip encoder if using pre-extracted features
+        if self.use_feature_input:
+            x_embed = x
+        else:
+            x_embed = self.diffusion_encoder(x)
         x_embed = self.norm(x_embed)
 
         if self.guidance:
@@ -340,6 +350,7 @@ class DirectionalConditionalModel(nn.Module):
         num_models=2,
         encoder_type="resnet34",
         objective="pred_res_noise",
+        use_feature_input=False,
     ):
         """
         Initialize the ResConditionalModel.
@@ -352,6 +363,7 @@ class DirectionalConditionalModel(nn.Module):
         - guidance: Whether to use guidance.
         - num_models: Number of ConditionalModels to use (1 or 2).
         - objective: Defines the task ('pred_res_noise', 'pred_noise', 'pred_res').
+        - use_feature_input: If True, skip diffusion_encoder (for pre-extracted features).
         """
         super().__init__()
         self.n_steps = n_steps
@@ -362,6 +374,7 @@ class DirectionalConditionalModel(nn.Module):
         self.num_models = num_models
         self.objective = objective
         self.encoder_type = encoder_type
+        self.use_feature_input = use_feature_input
 
         # Define one or two ConditionalModel instances
         if self.num_models == 1:
@@ -374,6 +387,7 @@ class DirectionalConditionalModel(nn.Module):
                 num_models,
                 encoder_type,
                 objective,
+                use_feature_input,
             )
 
         elif self.num_models == 2:
@@ -386,6 +400,7 @@ class DirectionalConditionalModel(nn.Module):
                 num_models,
                 encoder_type,
                 objective,
+                use_feature_input,
             )
             self.model1 = ConditionalModel(
                 n_steps,
@@ -396,6 +411,7 @@ class DirectionalConditionalModel(nn.Module):
                 num_models,
                 encoder_type,
                 objective,
+                use_feature_input,
             )
 
         else:
@@ -450,6 +466,7 @@ class DirectionalDiffusion(nn.Module):
         num_timesteps=1000,
         n_class=10,
         fp_dim=512,
+        input_dim=None,
         device="cuda",
         feature_dim=2048,
         objective="pred_res_noise",
@@ -460,6 +477,7 @@ class DirectionalDiffusion(nn.Module):
         sampling_timesteps=10,
         convert_to_ddim=False,
         beta_schedule="cosine",
+        use_feature_input=False,
     ):
 
         super().__init__()
@@ -470,15 +488,17 @@ class DirectionalDiffusion(nn.Module):
         self.n_class = n_class
         self.y_dim = n_class
         self.feature_dim = feature_dim
+        self.input_dim = input_dim
         self.objective = objective
         self.condition = condition
         self.fp_dim = fp_dim
         self.encoder_type = encoder_type
-        self.fp_encoder = fp_encoder.eval()
+        self.fp_encoder = fp_encoder.eval() if fp_encoder is not None else None
         self.sum_scale = sum_scale
         self.sampling_timesteps = sampling_timesteps
         self.convert_to_ddim = convert_to_ddim
         self.beta_schedule = beta_schedule
+        self.use_feature_input = use_feature_input
 
         if self.num_models == 2:
             self.model0 = self.model.model0
@@ -775,8 +795,11 @@ class DirectionalDiffusion(nn.Module):
         Parameters:
         - net_state_dicts: Dictionary of state dictionaries for the models, encoders, and optional feature encoder.
         """
-        self.model0.load_state_dict(net_state_dicts["model0"])
-        self.model1.load_state_dict(net_state_dicts["model1"])
+        if self.num_models == 2:
+            self.model0.load_state_dict(net_state_dicts["model0"])
+            self.model1.load_state_dict(net_state_dicts["model1"])
+        else:
+            self.model.load_state_dict(net_state_dicts["model"])
 
-        if "fp_encoder" in net_state_dicts:
+        if "fp_encoder" in net_state_dicts and self.fp_encoder is not None:
             self.fp_encoder.load_state_dict(net_state_dicts["fp_encoder"])

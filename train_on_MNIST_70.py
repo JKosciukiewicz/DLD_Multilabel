@@ -526,13 +526,13 @@ if __name__ == "__main__":
     # NEW CODE:
     n_class = 10
     train_dataset = SingleDigitMNISTDataset(
-        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_70/raw/train.csv",
-        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_70/raw/",
+        csv_file="./data/single_mnist_occluded_70/raw/train.csv",
+        image_dir="./data/single_mnist_occluded_70/raw/",
         transform=None,
     )
     test_dataset = SingleDigitMNISTDataset(
-        csv_file="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_70/raw/test.csv",
-        image_dir="/Users/jkosciukiewicz/Developer/Research/DLD/data/single_mnist_occluded_70/raw/",
+        csv_file="./data/single_mnist_occluded_70/raw/test.csv",
+        image_dir="./data/single_mnist_occluded_70/raw/",
         transform=None,
     )
     MNIST_MEAN = 0.1307
@@ -644,3 +644,4 @@ del_path}")
         vit_fp=True,
         fp_dim=fp_dim,
     )
+  )

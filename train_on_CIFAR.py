@@ -1,3 +1,5 @@
+import utils.compat
+import os
 import tqdm
 import random
 import torch
