@@ -4,7 +4,7 @@
 #SBATCH --account=plgwtln2-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=24G
+#SBATCH --mem=40G
 #SBATCH --gres=gpu
 
 source /net/pr2/projects/plgrid/plggwtln/jk/DLD/bin/activate
