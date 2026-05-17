@@ -7,10 +7,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
-from torch.utils.data import Dataset
 import tqdm
+from sklearn.metrics import accuracy_score, f1_score, precision_score, roc_auc_score
+from torch.utils.data import Dataset
 
 import utils.compat
+import wandb
+from bray_dataset import BrayDataset
 from utils.add_ccn_noise import *
 from utils.cifar_data_utils import Custom_dataset, Double_dataset
 from utils.directional_diffusion_model import *
@@ -18,16 +21,16 @@ from utils.ema import EMA
 from utils.learning import *
 from utils.log_config import setup_logger
 from utils.pre_correction import *
-from bray_dataset import BrayDataset
 
 
 # Simple feature encoder for pre-extracted features
 class FeatureEncoder(nn.Module):
     """Simple linear encoder for pre-extracted features."""
+
     def __init__(self, input_dim, output_dim=512):
         super().__init__()
         self.fc = nn.Linear(input_dim, output_dim)
-        
+
     def forward(self, x):
         # x shape: (batch, input_dim)
         return self.fc(x)
@@ -39,14 +42,15 @@ class FeatureDoubleDataset(Dataset):
     Dataset wrapper that creates weak and strong views from pre-extracted features.
     For features, weak/strong just means the same features (identity).
     """
+
     def __init__(self, dataset, feature_dim, fp_dim=512):
         self.dataset = dataset
         self.feature_dim = feature_dim
         self.fp_dim = fp_dim
-        
+
     def __len__(self):
         return len(self.dataset)
-    
+
     def __getitem__(self, idx):
         features, targets, mask = self.dataset[idx]
         # For features, weak and strong are the same
@@ -59,12 +63,13 @@ class FeatureCustomDataset(Dataset):
     """
     Dataset wrapper for test set with pre-extracted features.
     """
+
     def __init__(self, dataset):
         self.dataset = dataset
-        
+
     def __len__(self):
         return len(self.dataset)
-    
+
     def __getitem__(self, idx):
         features, targets, mask = self.dataset[idx]
         # features shape: (feature_dim,) - DO NOT add batch dim, DataLoader will handle it
@@ -72,16 +77,14 @@ class FeatureCustomDataset(Dataset):
 
 
 # Main training function
-def train(
-    diffusion_model, train_dataset, test_dataset, model_path, args, feature_dim
-):
+def train(diffusion_model, train_dataset, test_dataset, model_path, args, feature_dim):
     """
     Train the diffusion model with the given datasets and arguments.
     """
     print(
         f"Use loss weights: {args.loss_w}, Use Single label: {args.to_single_label}, Use One view: {args.one_view}"
     )
-    
+
     device = diffusion_model.device
     n_class = diffusion_model.n_class
     num_models = diffusion_model.num_models
@@ -127,7 +130,10 @@ def train(
     strong_embed = strong_embed.to(device)
 
     train_loader = data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
     )
     test_loader = data.DataLoader(
         test_dataset, batch_size=200, shuffle=False, num_workers=args.num_workers
@@ -318,6 +324,14 @@ def train(
                                 "noise_loss": l_noise_loss.item(),
                             }
                         )
+                        if args.use_wandb:
+                            wandb.log(
+                                {
+                                    "train/res_loss": l_res_loss.item(),
+                                    "train/noise_loss": l_noise_loss.item(),
+                                    "train/epoch": epoch + i / len(train_loader),
+                                }
+                            )
 
                     elif diffusion_model.num_models == 1:
                         loss = 0.1 * l_res_loss + 0.9 * l_noise_loss
@@ -329,6 +343,13 @@ def train(
                         optimizer.step()
                         ema_helper.update(diffusion_model.model)
                         pbar.set_postfix({"loss": loss.item()})
+                        if args.use_wandb:
+                            wandb.log(
+                                {
+                                    "train/loss": loss.item(),
+                                    "train/epoch": epoch + i / len(train_loader),
+                                }
+                            )
 
                 else:
                     L_noise = diffusion_loss(output, e)
@@ -347,11 +368,27 @@ def train(
                     optimizer.step()
                     ema_helper.update(diffusion_model.model)
                     pbar.set_postfix({"loss": loss.item()})
+                    if args.use_wandb:
+                        wandb.log(
+                            {
+                                "train/loss": loss.item(),
+                                "train/epoch": epoch + i / len(train_loader),
+                            }
+                        )
 
         # Validation and model saving
         if epoch >= warmup_epochs:
-            test_acc = test(diffusion_model, test_loader, feature_dim)
-            logger.info(f"epoch: {epoch}, test accuracy: {test_acc:.2f}%")
+            metrics = test(diffusion_model, test_loader, feature_dim)
+            test_acc = metrics["accuracy"]
+            logger.info(
+                f"epoch: {epoch}, test accuracy: {test_acc:.2f}%, ROC-AUC: {metrics['roc_auc']:.4f}"
+            )
+
+            if args.use_wandb:
+                wandb_metrics = {f"test/{k}": v for k, v in metrics.items()}
+                wandb_metrics["test/epoch"] = epoch
+                wandb.log(wandb_metrics)
+
             if test_acc > max_accuracy:
                 print("Improved! Evaluate on testing set...")
                 if diffusion_model.num_models == 1:
@@ -373,13 +410,14 @@ def train(
 
 def test(diffusion_model, test_loader, feature_dim):
     """
-    Test the diffusion model.
+    Test the diffusion model and return multiple metrics.
     """
+    all_preds = []
+    all_targets = []
+
     with torch.no_grad():
         diffusion_model.model.eval()
         diffusion_model.fp_encoder.eval()
-        correct_cnt = 0
-        all_cnt = 0
         for idx, data_batch in tqdm(
             enumerate(test_loader),
             total=len(test_loader),
@@ -392,19 +430,50 @@ def test(diffusion_model, test_loader, feature_dim):
             images = images.to(diffusion_model.device)
             if len(images.shape) == 3:
                 images = images.squeeze(1)  # Remove extra dimension
-            
+
             label_t_0 = diffusion_model.ddim_sample(
                 x_batch=images, y_input=0, fp_x=None, last=True, stochastic=False
             )
-            correct = cnt_agree(label_t_0.detach(), target)
-            correct_cnt += correct
-            all_cnt += images.shape[0]
 
-    acc = 100 * correct_cnt / all_cnt
-    return acc
+            all_preds.append(label_t_0.detach().cpu())
+            all_targets.append(target.detach().cpu())
+
+    all_preds = torch.cat(all_preds, dim=0).numpy()
+    all_targets = torch.cat(all_targets, dim=0).numpy()
+
+    # BBBC021/Bray are typically multi-label binary classification tasks in this repo
+    # Predictions from diffusion are continuous, threshold at 0.5 for discrete metrics
+    binary_preds = (all_preds > 0.5).astype(float)
+
+    acc = accuracy_score(all_targets, binary_preds)
+
+    # Calculate Precision and F1 (macro average for multi-label)
+    precision = precision_score(
+        all_targets, binary_preds, average="macro", zero_division=0
+    )
+    f1 = f1_score(all_targets, binary_preds, average="macro", zero_division=0)
+
+    # Calculate ROC-AUC (macro average)
+    try:
+        # Some classes might not have both positive and negative samples in the test set
+        roc_auc = roc_auc_score(all_targets, all_preds, average="macro")
+    except ValueError:
+        roc_auc = 0.0
+        print(
+            "Warning: ROC-AUC could not be calculated (likely missing classes in batch)"
+        )
+
+    return {
+        "accuracy": acc * 100,
+        "roc_auc": roc_auc,
+        "precision": precision,
+        "f1_score": f1,
+    }
 
 
-def prepare_2_fp_x_feature(fp_encoder, dataset, save_dir=None, device='cpu', fp_dim=768, batch_size=400):
+def prepare_2_fp_x_feature(
+    fp_encoder, dataset, save_dir=None, device="cpu", fp_dim=768, batch_size=400
+):
     """
     Prepare feature embeddings for pre-extracted features.
     """
@@ -413,8 +482,15 @@ def prepare_2_fp_x_feature(fp_encoder, dataset, save_dir=None, device='cpu', fp_
     fp_embed_all_strong = torch.zeros([len(dataset), fp_dim], device=device)
 
     with torch.no_grad():
-        data_loader = data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=16)
-        with tqdm(enumerate(data_loader), total=len(data_loader), desc=f'Computing embeddings fp(x)', ncols=100) as pbar:
+        data_loader = data.DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=16
+        )
+        with tqdm(
+            enumerate(data_loader),
+            total=len(data_loader),
+            desc=f"Computing embeddings fp(x)",
+            ncols=100,
+        ) as pbar:
             for i, data_batch in pbar:
                 [x_batch_weak, x_batch_strong, _, data_indices] = data_batch[:4]
                 temp_weak = fp_encoder(x_batch_weak.to(device))
@@ -488,16 +564,23 @@ if __name__ == "__main__":
         help="create your logs name",
         type=str,
     )
+    # Wandb parameters
+    parser.add_argument(
+        "--use_wandb", action="store_true", help="Use wandb for logging"
+    )
+    parser.add_argument("--wandb_project", default="DLD-Bio", type=str)
+    parser.add_argument("--wandb_entity", default=None, type=str)
+    parser.add_argument("--wandb_run_name", default=None, type=str)
     # Dataset paths
     parser.add_argument(
         "--data_file",
-        default="_data/gigadb/gigadb.csv",
+        default="data/gigadb/gigadb.csv",
         help="path to Bray features CSV file",
         type=str,
     )
     parser.add_argument(
         "--labels_file",
-        default="_data/gigadb/gigadb_MoA_with_images_filtered_25.csv",
+        default="data/gigadb/gigadb_MoA_with_images_filtered_25.csv",
         help="path to Bray labels CSV file",
         type=str,
     )
@@ -532,14 +615,16 @@ if __name__ == "__main__":
 
     n_class = len(train_dataset_raw.get_target_names())
     feature_dim = len(train_dataset_raw.get_feature_names())
-    
+
     print(f"Number of classes (MoA): {n_class}")
     print(f"Number of features: {feature_dim}")
     print(f"Training samples: {len(train_dataset_raw)}")
     print(f"Test samples: {len(test_dataset_raw)}")
 
     # Create feature encoder
-    fp_encoder = FeatureEncoder(input_dim=feature_dim, output_dim=args.feature_dim).to(device)
+    fp_encoder = FeatureEncoder(input_dim=feature_dim, output_dim=args.feature_dim).to(
+        device
+    )
     fp_dim = args.feature_dim
 
     # Wrap datasets for training
@@ -585,6 +670,15 @@ if __name__ == "__main__":
     # Train the diffusion model
     print(f"Training DLD using fp encoder: {args.fp_encoder} on: {args.noise_type}.")
     print(f"Model saving dir: {model_path}")
+
+    if args.use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_run_name or args.log_name.replace(".log", ""),
+            config=vars(args),
+        )
+
     train(
         diffusion_model,
         train_dataset=train_dataset,
@@ -593,3 +687,6 @@ if __name__ == "__main__":
         args=args,
         feature_dim=feature_dim,
     )
+
+    if args.use_wandb:
+        wandb.finish()

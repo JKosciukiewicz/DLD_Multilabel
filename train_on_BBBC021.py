@@ -9,6 +9,8 @@ import torch.optim as optim
 import torch.utils.data as data
 from torch.utils.data import Dataset
 import tqdm
+import wandb
+from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, f1_score
 
 import utils.compat
 from utils.add_ccn_noise import *
@@ -86,7 +88,7 @@ def train(
     n_class = diffusion_model.n_class
     num_models = diffusion_model.num_models
     n_epochs = args.nepoch
-    k = args.k
+    k = k = args.k
     warmup_epochs = args.warmup_epochs
     noise_class = args.noise_type.split("-")[1]
     noise_ratio = float(args.noise_type.split("-")[2])
@@ -318,6 +320,12 @@ def train(
                                 "noise_loss": l_noise_loss.item(),
                             }
                         )
+                        if args.use_wandb:
+                            wandb.log({
+                                "train/res_loss": l_res_loss.item(),
+                                "train/noise_loss": l_noise_loss.item(),
+                                "train/epoch": epoch + i / len(train_loader)
+                            })
 
                     elif diffusion_model.num_models == 1:
                         loss = 0.1 * l_res_loss + 0.9 * l_noise_loss
@@ -329,6 +337,11 @@ def train(
                         optimizer.step()
                         ema_helper.update(diffusion_model.model)
                         pbar.set_postfix({"loss": loss.item()})
+                        if args.use_wandb:
+                            wandb.log({
+                                "train/loss": loss.item(),
+                                "train/epoch": epoch + i / len(train_loader)
+                            })
 
                 else:
                     L_noise = diffusion_loss(output, e)
@@ -347,11 +360,23 @@ def train(
                     optimizer.step()
                     ema_helper.update(diffusion_model.model)
                     pbar.set_postfix({"loss": loss.item()})
+                    if args.use_wandb:
+                        wandb.log({
+                            "train/loss": loss.item(),
+                            "train/epoch": epoch + i / len(train_loader)
+                        })
 
         # Validation and model saving
         if epoch >= warmup_epochs:
-            test_acc = test(diffusion_model, test_loader, feature_dim)
-            logger.info(f"epoch: {epoch}, test accuracy: {test_acc:.2f}%")
+            metrics = test(diffusion_model, test_loader, feature_dim)
+            test_acc = metrics["accuracy"]
+            logger.info(f"epoch: {epoch}, test accuracy: {test_acc:.2f}%, ROC-AUC: {metrics['roc_auc']:.4f}")
+            
+            if args.use_wandb:
+                wandb_metrics = {f"test/{k}": v for k, v in metrics.items()}
+                wandb_metrics["test/epoch"] = epoch
+                wandb.log(wandb_metrics)
+
             if test_acc > max_accuracy:
                 print("Improved! Evaluate on testing set...")
                 if diffusion_model.num_models == 1:
@@ -373,13 +398,14 @@ def train(
 
 def test(diffusion_model, test_loader, feature_dim):
     """
-    Test the diffusion model.
+    Test the diffusion model and return multiple metrics.
     """
+    all_preds = []
+    all_targets = []
+    
     with torch.no_grad():
         diffusion_model.model.eval()
         diffusion_model.fp_encoder.eval()
-        correct_cnt = 0
-        all_cnt = 0
         for idx, data_batch in tqdm(
             enumerate(test_loader),
             total=len(test_loader),
@@ -396,12 +422,37 @@ def test(diffusion_model, test_loader, feature_dim):
             label_t_0 = diffusion_model.ddim_sample(
                 x_batch=images, y_input=0, fp_x=None, last=True, stochastic=False
             )
-            correct = cnt_agree(label_t_0.detach(), target)
-            correct_cnt += correct
-            all_cnt += images.shape[0]
+            
+            all_preds.append(label_t_0.detach().cpu())
+            all_targets.append(target.detach().cpu())
 
-    acc = 100 * correct_cnt / all_cnt
-    return acc
+    all_preds = torch.cat(all_preds, dim=0).numpy()
+    all_targets = torch.cat(all_targets, dim=0).numpy()
+    
+    # BBBC021/Bray are typically multi-label binary classification tasks in this repo
+    # Predictions from diffusion are continuous, threshold at 0.5 for discrete metrics
+    binary_preds = (all_preds > 0.5).astype(float)
+    
+    acc = accuracy_score(all_targets, binary_preds)
+    
+    # Calculate Precision and F1 (macro average for multi-label)
+    precision = precision_score(all_targets, binary_preds, average='macro', zero_division=0)
+    f1 = f1_score(all_targets, binary_preds, average='macro', zero_division=0)
+    
+    # Calculate ROC-AUC (macro average)
+    try:
+        # Some classes might not have both positive and negative samples in the test set
+        roc_auc = roc_auc_score(all_targets, all_preds, average='macro')
+    except ValueError:
+        roc_auc = 0.0
+        print("Warning: ROC-AUC could not be calculated (likely missing classes in batch)")
+
+    return {
+        "accuracy": acc * 100,
+        "roc_auc": roc_auc,
+        "precision": precision,
+        "f1_score": f1
+    }
 
 
 def prepare_2_fp_x_feature(fp_encoder, dataset, save_dir=None, device='cpu', fp_dim=768, batch_size=400):
@@ -488,10 +539,15 @@ if __name__ == "__main__":
         help="create your logs name",
         type=str,
     )
+    # Wandb parameters
+    parser.add_argument("--use_wandb", action="store_true", help="Use wandb for logging")
+    parser.add_argument("--wandb_project", default="DLD-Bio", type=str)
+    parser.add_argument("--wandb_entity", default=None, type=str)
+    parser.add_argument("--wandb_run_name", default=None, type=str)
     # Dataset path
     parser.add_argument(
         "--data_file",
-        default="_data/BBBC021/BBBC021_dataset_complete_one_fold.csv",
+        default="data/BBBC021/BBBC021_dataset_complete_one_fold.csv",
         help="path to BBBC021 dataset CSV file",
         type=str,
     )
@@ -575,6 +631,15 @@ if __name__ == "__main__":
     # Train the diffusion model
     print(f"Training DLD using fp encoder: {args.fp_encoder} on: {args.noise_type}.")
     print(f"Model saving dir: {model_path}")
+
+    if args.use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_run_name or args.log_name.replace(".log", ""),
+            config=vars(args),
+        )
+
     train(
         diffusion_model,
         train_dataset=train_dataset,
@@ -583,3 +648,6 @@ if __name__ == "__main__":
         args=args,
         feature_dim=feature_dim,
     )
+
+    if args.use_wandb:
+        wandb.finish()

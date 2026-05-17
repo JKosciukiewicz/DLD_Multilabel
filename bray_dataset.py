@@ -33,7 +33,7 @@ class BrayDataset(Dataset):
 
         # First, identify MoA columns from labels file
         print("Identifying MoA columns...")
-        labels_df_raw = pd.read_csv(labels_file)
+        labels_df_raw = pd.read_csv(labels_file, low_memory=False)
         
         # Find all mechanism of action columns (binary targets)
         self.moa_columns = [
@@ -55,7 +55,7 @@ class BrayDataset(Dataset):
 
         # Identify feature columns from data file
         print("Identifying feature columns...")
-        data_df_raw = pd.read_csv(data_file)
+        data_df_raw = pd.read_csv(data_file, low_memory=False)
         
         self.feature_columns = [
             col
@@ -65,13 +65,13 @@ class BrayDataset(Dataset):
 
         # Load and filter labels
         print("Loading and filtering labels...")
-        labels_df = pd.read_csv(labels_file)
+        labels_df = pd.read_csv(labels_file, low_memory=False)
         labels_df = labels_df[["BROAD_ID", split_column] + self.moa_columns]
         labels_df = labels_df[labels_df[split_column] == split_value]
         labels_df = labels_df.drop_duplicates(subset=["BROAD_ID"])
 
         # Load and process data
-        data_df = pd.read_csv(data_file)
+        data_df = pd.read_csv(data_file, low_memory=False)
         
         # Handle different column names for BROAD_ID
         if "Metadata_broad_sample" in data_df.columns:
@@ -84,7 +84,7 @@ class BrayDataset(Dataset):
 
         # Join data with labels
         merged_df = pd.merge(data_df, labels_df, on="BROAD_ID", how="inner")
-        merged_df = merged_df[self.feature_columns + self.moa_columns]
+        merged_df = merged_df[self.feature_columns + self.moa_columns].dropna()
 
         print(f"Loaded {len(merged_df)} samples")
 

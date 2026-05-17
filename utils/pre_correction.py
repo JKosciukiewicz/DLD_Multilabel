@@ -39,19 +39,28 @@ def label_distribution(query_embd, y_query, prior_embd, labels, k=50, n_class=10
     neighbour_labels = labels[neighbour_ind]
 
     if weighted:
-        weights = 1.0 / (neighbour_v + 1e-6)
-        weights_normalized = weights / weights.sum(dim=1, keepdim=True)
+        if use_cosine_similarity:
+            # For similarity, higher is better. Use positive values for weights.
+            # neighbour_v is in [-1, 1] for normalized cosine similarity.
+            # Shift to [0, 2] and add epsilon.
+            weights = (neighbour_v + 1.0) + 1e-6
+        else:
+            # For distance, lower is better.
+            weights = 1.0 / (neighbour_v + 1e-6)
+        
+        weights_sum = weights.sum(dim=1, keepdim=True)
+        weights_normalized = weights / (weights_sum + 1e-10)
 
         if len(labels.shape) == 2:
             neighbour_label_distribution = torch.sum(neighbour_labels * weights_normalized.unsqueeze(2), dim=1)
         else:
-            labels_one_hot = F.one_hot(neighbour_labels, num_classes=n_class).float().to(device)
+            labels_one_hot = F.one_hot(neighbour_labels.to(torch.int64), num_classes=n_class).float().to(device)
             neighbour_label_distribution = torch.sum(labels_one_hot * weights_normalized.unsqueeze(2), dim=1)
     else:
         if len(labels.shape) == 2:
             neighbour_label_distribution = neighbour_labels.mean(dim=1)
         else:
-            labels_one_hot = F.one_hot(neighbour_labels, num_classes=n_class).float().to(device)
+            labels_one_hot = F.one_hot(neighbour_labels.to(torch.int64), num_classes=n_class).float().to(device)
             neighbour_label_distribution = labels_one_hot.mean(dim=1)
 
     _, max_prob_label = torch.max(neighbour_label_distribution, dim=1)
@@ -59,9 +68,9 @@ def label_distribution(query_embd, y_query, prior_embd, labels, k=50, n_class=10
 
 def KL_label_distribution(neighbour_label_distribution_w, neighbour_label_distribution_s):
     device = neighbour_label_distribution_w.device
-    distribution_w = F.softmax(neighbour_label_distribution_w, dim=1).to(device)
-    distribution_s = F.softmax(neighbour_label_distribution_s, dim=1).to(device)
-    kl_div = F.kl_div(distribution_w.log(), distribution_s, reduction='none')
+    kl_div = F.kl_div(F.log_softmax(neighbour_label_distribution_w, dim=1), 
+                      F.softmax(neighbour_label_distribution_s, dim=1), 
+                      reduction='none')
     kl_div_per_sample = kl_div.sum(dim=1)
     return kl_div_per_sample
 
@@ -85,8 +94,13 @@ def gmm_binary_split(kl_div_values, n_components=2, random_state=0):
     # Reshape for GMM
     kl_div_values = kl_div_values.reshape(-1, 1)
 
+    # Check if all values are the same
+    if np.max(kl_div_values) - np.min(kl_div_values) < 1e-10:
+        # All samples go to lower set if they are all consistent
+        return np.arange(len(kl_div_values)), np.array([], dtype=np.int64)
+
     # Train GMM
-    gmm = GaussianMixture(n_components=n_components, random_state=random_state).fit(kl_div_values)
+    gmm = GaussianMixture(n_components=n_components, random_state=random_state, reg_covar=1e-6).fit(kl_div_values)
 
     # Get means of the two components and determine the lower mean
     means = gmm.means_.flatten()
@@ -208,7 +222,6 @@ def precorrect_labels_in_two_view(fp_embd_w, fp_embd_s, y_noisy, weak_embed, str
     - weak_embed: Embeddings for the weakly augmented dataset.
     - strong_embed: Embeddings for the strongly augmented dataset.
     - noisy_labels: Tensor of noisy labels.
-    - device: Device to perform computations (default is 'cpu').
     - k: Number of nearest neighbors to consider (default is 50).
     - n_class: Number of classes (default is 10).
     - use_cosine_similarity: Whether to use cosine similarity (default is True).
@@ -255,7 +268,12 @@ def precorrect_labels_in_two_view(fp_embd_w, fp_embd_s, y_noisy, weak_embed, str
     lower_set_batch, higher_set_batch = gmm_binary_split(kl_div)
 
     # Use normalized KL divergence as gamma_batch (higher KL -> higher gamma)
-    kl_div_normalized = (kl_div - kl_div.min()) / (kl_div.max() - kl_div.min())
+    kl_div_min = kl_div.min()
+    kl_div_max = kl_div.max()
+    if kl_div_max > kl_div_min:
+        kl_div_normalized = (kl_div - kl_div_min) / (kl_div_max - kl_div_min)
+    else:
+        kl_div_normalized = torch.zeros_like(kl_div)
     gamma_batch = kl_div_normalized
 
     # Precorrect labels for weak and strong views
@@ -279,8 +297,7 @@ def precorrect_labels_in_two_view(fp_embd_w, fp_embd_s, y_noisy, weak_embed, str
 
     # Compute absolute differences and normalize
     abs_diff = torch.abs(neighbour_label_distribution_w - neighbour_label_distribution_s)  # [n_sample, n_class]
-    y_label_batch_n = abs_diff / abs_diff.sum(dim=1, keepdim=True)  # Normalize along the class dimension
-
-
+    sum_abs_diff = abs_diff.sum(dim=1, keepdim=True)
+    y_label_batch_n = abs_diff / (sum_abs_diff + 1e-10)  # Normalize along the class dimension
 
     return y_label_batch_w, y_label_batch_s, loss_weights_w, loss_weights_s, y_label_batch_n, gamma_batch
