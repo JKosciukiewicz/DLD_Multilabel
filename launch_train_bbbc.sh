@@ -9,4 +9,11 @@
 
 source /net/pr2/projects/plgrid/plggwtln/jk/DLD/bin/activate
 cd /net/people/plgrid/plgjkosciukiewi/DLD_Multilabel/
-python train_on_BBBC021.py --data_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/BBBC021/BBBC021_dataset_complete_one_fold.csv
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+export WANDB_MODE=online
+
+python train_on_BBBC021.py \
+    --data_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/BBBC021/BBBC021_dataset_complete_one_fold.csv \
+    --use_wandb \
+    --wandb_run_name "bbbc_full_${TIMESTAMP}"

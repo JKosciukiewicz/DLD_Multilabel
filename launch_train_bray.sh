@@ -9,4 +9,12 @@
 
 source /net/pr2/projects/plgrid/plggwtln/jk/DLD/bin/activate
 cd /net/people/plgrid/plgjkosciukiewi/DLD_Multilabel/
-python train_on_Bray.py --data_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb.csv --labels_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb_top_30_moas.csv
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+export WANDB_MODE=online
+
+python train_on_Bray.py \
+    --data_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb.csv \
+    --labels_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb_top_30_moas.csv \
+    --use_wandb \
+    --wandb_run_name "bray_full_${TIMESTAMP}"
