@@ -16,4 +16,5 @@ export WANDB_MODE=online
 python train_on_BBBC021.py \
     --data_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/BBBC021/BBBC021_dataset_complete_one_fold.csv \
     --use_wandb \
+    --wandb_project "DLD_bbbc" \
     --wandb_run_name "bbbc_full_${TIMESTAMP}"

@@ -17,4 +17,5 @@ python train_on_Bray.py \
     --data_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb.csv \
     --labels_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb_top_30_moas.csv \
     --use_wandb \
+    --wandb_project "DLD_Bray" \
     --wandb_run_name "bray_full_${TIMESTAMP}"
