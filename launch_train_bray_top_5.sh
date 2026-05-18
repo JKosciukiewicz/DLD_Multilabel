@@ -18,4 +18,4 @@ python train_on_Bray.py \
     --labels_file /net/pr2/projects/plgrid/plggwtln/jk/datasets/gigadb/gigadb_top_5_moas.csv \
     --use_wandb \
     --wandb_project "DLD_Bray" \
-    --wandb_run_name "bray_full_${TIMESTAMP}"
+    --wandb_run_name "bray_top_5_${TIMESTAMP}"
